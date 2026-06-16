@@ -17,7 +17,9 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <functional>
 #include <memory>
+#include <unordered_map>
 
 #include "gz/math/Helpers.hh"
 #include "gz/common/Console.hh"
@@ -28,6 +30,21 @@
 using namespace gz;
 using namespace common;
 
+namespace {
+/// \brief Hash for gz::math::Vector3d so duplicate vertices can be found in
+/// O(1) average time instead of a linear SubMesh::IndexOfVertex() scan.
+struct Vector3dHash
+{
+  std::size_t operator()(const gz::math::Vector3d &_v) const
+  {
+    std::hash<double> hasher;
+    std::size_t seed = hasher(_v.X());
+    seed ^= hasher(_v.Y()) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    seed ^= hasher(_v.Z()) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    return seed;
+  }
+};
+}  // namespace
 
 //////////////////////////////////////////////////
 class gz::common::STLLoader::Implementation
@@ -88,6 +105,12 @@ bool STLLoader::ReadAscii(FILE *_filein, Mesh *_mesh)
 
   SubMesh subMesh;
 
+  // Map of vertex -> index of its first occurrence, so duplicate vertices
+  // reuse the existing index in O(1) instead of an O(n) IndexOfVertex() scan
+  // (which made ASCII STL loading O(n^2)).
+  std::unordered_map<gz::math::Vector3d, unsigned int, Vector3dHash>
+      vertexIndex;
+
   // Read the next line of the file into INPUT.
   while (fgets (input, LINE_MAX_LEN, _filein) != nullptr)
   {
@@ -145,7 +168,19 @@ bool STLLoader::ReadAscii(FILE *_filein, Mesh *_mesh)
 
         subMesh.AddVertex(vertex);
         subMesh.AddNormal(normal);
-        subMesh.AddIndex(subMesh.IndexOfVertex(vertex));
+        // Reuse the first index for a repeated vertex, matching the previous
+        // IndexOfVertex() behavior but without the linear scan.
+        auto vertexIndexIt = vertexIndex.find(vertex);
+        if (vertexIndexIt != vertexIndex.end())
+        {
+          subMesh.AddIndex(vertexIndexIt->second);
+        }
+        else
+        {
+          unsigned int newIndex = subMesh.VertexCount() - 1;
+          vertexIndex[vertex] = newIndex;
+          subMesh.AddIndex(newIndex);
+        }
       }
 
       if (fgets (input, LINE_MAX_LEN, _filein) == nullptr)
