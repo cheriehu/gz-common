@@ -629,6 +629,7 @@ std::pair<std::string, ImagePtr> AssimpLoader::Implementation::LoadTexture(
     const std::string& _textureName,
     bool _shouldCache) const
 {
+  auto start = std::chrono::steady_clock::now();
   std::pair<std::string, ImagePtr> ret;
   std::string textureKey = this->FullTextureKey(_texturePath.C_Str());
 
@@ -636,6 +637,7 @@ std::pair<std::string, ImagePtr> AssimpLoader::Implementation::LoadTexture(
   auto it = this->imageCache.find(textureKey);
   if (it != this->imageCache.end())
   {
+    std::cout << "Texture [" << textureKey << "] found in cache" << std::endl;
     gzdbg << "Texture [" << textureKey << "] found in cache" << std::endl;
     ret.first = _textureName;
     ret.second = it->second;
@@ -643,6 +645,7 @@ std::pair<std::string, ImagePtr> AssimpLoader::Implementation::LoadTexture(
   }
 
   // Check if the texture is embedded or not
+  // std::cout << "_texturePath" <<_texturePath.C_Str() << '\n';
   auto embeddedTexture = _scene->GetEmbeddedTexture(_texturePath.C_Str());
   if (embeddedTexture)
   {
@@ -677,6 +680,9 @@ std::pair<std::string, ImagePtr> AssimpLoader::Implementation::LoadTexture(
     }
     ret.first = _textureName;
   }
+  auto end = std::chrono::steady_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+  std::cout << "AssimpLoader::Implementation::LoadTexture took: " << duration.count() << " ms" << std::endl;
   return ret;
 }
 

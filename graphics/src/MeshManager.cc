@@ -16,6 +16,8 @@
  */
 
 #include <sys/stat.h>
+#include <chrono>
+#include <iostream>
 
 #include <cctype>
 #include <cstdint>
@@ -140,6 +142,7 @@ MeshManager::~MeshManager()
 //////////////////////////////////////////////////
 const Mesh *MeshManager::Load(const std::string &_filename)
 {
+  auto start = std::chrono::steady_clock::now();
   if (!this->IsValidFilename(_filename))
   {
     gzerr << "Invalid mesh filename extension[" << _filename << "]\n";
@@ -205,6 +208,9 @@ const Mesh *MeshManager::Load(const std::string &_filename)
   else
     gzerr << "Unable to find file[" << _filename << "]\n";
 
+  auto end = std::chrono::steady_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+  std::cout << "MeshManager Load took: " << duration.count() << " ms" << std::endl;
   return mesh;
 }
 

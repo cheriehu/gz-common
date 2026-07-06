@@ -129,6 +129,8 @@ Image::~Image()
 //////////////////////////////////////////////////
 int Image::Load(const std::string &_filename)
 {
+  auto start = std::chrono::steady_clock::now();
+
   this->dataPtr->fullName = _filename;
   if (!exists(this->dataPtr->fullName))
   {
@@ -174,6 +176,14 @@ int Image::Load(const std::string &_filename)
     this->dataPtr->width = w;
     this->dataPtr->height = h;
     this->dataPtr->channels = n;
+    // 3. Capture the end time
+    auto end = std::chrono::steady_clock::now();
+
+    // 4. Calculate the duration by subtracting start from end
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+    // 5. Print the result using .count()
+    std::cout << "Image Load took: " << duration.count() << " ms" << std::endl;
 
     return 0;
   }

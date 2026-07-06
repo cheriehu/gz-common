@@ -159,6 +159,7 @@ void Material::SetTextureImage(const std::string &_tex,
                                const std::string &_resourcePath)
 {
   this->dataPtr->texImage = common::joinPaths(_resourcePath, _tex);
+  // std::cout << "_resourcePath " << this->dataPtr->texImage << '\n';
   this->dataPtr->texData = nullptr;
 
   // If the texture image doesn't exist then try the next most likely path.
