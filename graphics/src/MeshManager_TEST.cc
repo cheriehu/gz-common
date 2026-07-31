@@ -847,6 +847,20 @@ TEST_P(MeshManagerLoad, LoadBoxWithHierarchicalNodes)
 
   mgr->RemoveAll();
 }
+/////////////////////////////////////////////////
+TEST_P(MeshManagerLoad, MergeBoxWithDoubleSkeleton)
+{
+  auto *mgr = common::MeshManager::Instance();
+  const common::Mesh *mesh = mgr->Load(
+      common::testing::TestFile("data", "box_with_double_skeleton.dae"));
+  std::string skeletonRootName = "Armature";
+  EXPECT_TRUE(mesh->HasSkeleton());
+  auto skeleton_ptr = mesh->MeshSkeleton();
+  // The two skeletons have been joined and their root is the
+  // animation root, called Armature
+  EXPECT_EQ(skeleton_ptr->RootNode()->Name(), std::string(skeletonRootName));
+  mgr->RemoveAll();
+}
 
 /////////////////////////////////////////////////
 // Load animation without a name
