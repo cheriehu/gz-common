@@ -456,8 +456,8 @@ TEST_F(AssimpLoader, MergeBoxWithDoubleSkeleton)
   ASSERT_TRUE(mesh->HasSkeleton());
   auto skeleton_ptr = mesh->MeshSkeleton();
   // The two skeletons have been joined and their root is the
-  // animation root, called Scene
-  EXPECT_EQ(skeleton_ptr->RootNode()->Name(), std::string("Scene"));
+  // animation root, called Armature
+  EXPECT_EQ(skeleton_ptr->RootNode()->Name(), std::string("Armature"));
   delete mesh;
 }
 
