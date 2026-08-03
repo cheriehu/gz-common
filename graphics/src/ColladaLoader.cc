@@ -1264,6 +1264,7 @@ void ColladaLoader::Implementation::LoadAnimationSet(tinyxml2::XMLElement *_xml,
         {
           gzerr << "Failed to load animation, [" << targetBone << "] not found"
               << std::endl;
+          chanXml = chanXml->NextSiblingElement("channel");
           continue;
         }
         targetNode = this->LoadSkeletonNodes(targetNodeXml, nullptr);
@@ -1272,6 +1273,7 @@ void ColladaLoader::Implementation::LoadAnimationSet(tinyxml2::XMLElement *_xml,
       if (targetNode == nullptr)
       {
         gzerr << "Failed to load bone [" << targetBone << "]." << std::endl;
+        chanXml = chanXml->NextSiblingElement("channel");
         continue;
       }
 

@@ -257,6 +257,7 @@ void AssimpLoader::Implementation::RecursiveCreate(const aiScene* _scene,
     {
       // TODO(luca) merging skeletons here
       auto skeleton = _mesh->MeshSkeleton();
+      std::cout << "skeleton name: " << skeleton->RootNode()->Name() << std::endl;
       // TODO(luca) Append to existing skeleton if multiple submeshes?
       skeleton->SetNumVertAttached(subMesh.VertexCount());
       // Now add the bone weights
@@ -316,8 +317,11 @@ void AssimpLoader::Implementation::RecursiveBuildBoneNodeMap(
   if (!_node)
     return;
 
+  std::cout << "exploring node: " << ToString(_node->mName) << std::endl;
+
   for (unsigned meshIdx = 0; meshIdx < _node->mNumMeshes; ++meshIdx)
   {
+    std::cout << "this node has meshes" << std::endl;
     auto assimpMeshIdx = _node->mMeshes[meshIdx];
     auto assimpMesh = _scene->mMeshes[assimpMeshIdx];
     for (unsigned boneIdx = 0; boneIdx < assimpMesh->mNumBones; ++boneIdx)
@@ -329,10 +333,13 @@ void AssimpLoader::Implementation::RecursiveBuildBoneNodeMap(
       // - Mark all its parents the same way until you find the mesh's node 
       // or the parent of the mesh's node
       const aiNode *node = _scene->mRootNode->findBoneNode(bone);
+      std::cout << "bone node: " << ToString(node->mName) << std::endl;
       while (node != nullptr)
       {
+        std::cout << "exploring node and parents of: " << ToString(node->mName) << std::endl;
         if (node == _node || node == _node->mParent)
         {
+          std::cout << "node that fails: " << ToString(node->mName) << std::endl;
           break;
         }
         _nodeMap.insert(ToString(node->mName));
@@ -926,10 +933,12 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
       q.pop();
       if (nodeMap.find(ToString(curr->mName)) != nodeMap.end())
       {
+        std::cout << "this node is a bone or parent of a bone: " << ToString(curr->mName) << std::endl;
         skelRoots.push_back(curr);
       }
       else
       {
+        std::cout << "this node is NOT a bone or parent of a bone: " << ToString(curr->mName) << std::endl;
         for (unsigned i = 0; i < curr->mNumChildren; ++i)
           q.push(curr->mChildren[i]);
       }

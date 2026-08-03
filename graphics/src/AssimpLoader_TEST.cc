@@ -452,12 +452,24 @@ TEST_F(AssimpLoader, MergeBoxWithDoubleSkeleton)
 {
   common::AssimpLoader loader;
   common::Mesh *mesh = loader.Load(
-      common::testing::TestFile("data", "box_with_double_skeleton.dae"));
+      common::testing::TestFile("data", "failing_skeleton.dae"));
   ASSERT_TRUE(mesh->HasSkeleton());
   auto skeleton_ptr = mesh->MeshSkeleton();
-  // The two skeletons have been joined and their root is the
-  // animation root, called Armature
-  EXPECT_EQ(skeleton_ptr->RootNode()->Name(), std::string("Armature"));
+  // Both ColladaLoader and AssimpLoader now handle disjoint armatures by creating a "dummy-root".
+  EXPECT_EQ(skeleton_ptr->RootNode()->Name(), "dummy-root");
+  EXPECT_EQ(skeleton_ptr->RootNode()->ChildCount(), 2u);
+  
+  bool foundArmature1 = false;
+  bool foundArmature2 = false;
+  for (unsigned int i = 0; i < skeleton_ptr->RootNode()->ChildCount(); ++i)
+  {
+    std::string childName = skeleton_ptr->RootNode()->Child(i)->Name();
+    if (childName == "Bone" || childName == "Armature1") foundArmature1 = true;
+    if (childName == "Bone_003" || childName == "Armature2") foundArmature2 = true;
+  }
+  EXPECT_TRUE(foundArmature1);
+  EXPECT_TRUE(foundArmature2);
+
   delete mesh;
 }
 
