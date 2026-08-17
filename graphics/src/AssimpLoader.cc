@@ -158,12 +158,6 @@ class AssimpLoader::Implementation
           SkeletonNode* _parent,
           const std::unordered_set<std::string> &_nodeMap) const;
 
-  /// \brief Merge a new skeleton node into an existing skeleton
-  /// \param[in,out] _skeleton The root node of the existing skeleton
-  /// \param[in] _mergeNode The root node of the skeleton to merge
-  public: void MergeSkeleton(aiNode *&_skeleton,
-                             aiNode *_mergeNode) const;
-
   /// \brief Recursively build the node map starting from the root node
   /// to make sure that only nodes that map to a bone or their parents are 
   // added to the skeleton
@@ -322,7 +316,6 @@ void AssimpLoader::Implementation::RecursiveCreate(const aiScene* _scene,
     {
       // TODO(luca) merging skeletons here
       auto skeleton = _mesh->MeshSkeleton();
-      std::cout << "skeleton name: " << skeleton->RootNode()->Name() << std::endl;
       // TODO(luca) Append to existing skeleton if multiple submeshes?
       skeleton->SetNumVertAttached(subMesh.VertexCount());
       // Now add the bone weights
@@ -370,11 +363,8 @@ void AssimpLoader::Implementation::RecursiveBuildBoneNodeMap(
   if (!_node)
     return;
 
-  // std::cout << "exploring node: " << ToString(_node->mName) << std::endl;
-
   for (unsigned meshIdx = 0; meshIdx < _node->mNumMeshes; ++meshIdx)
   {
-    // std::cout << "this node has meshes" << std::endl;
     auto assimpMeshIdx = _node->mMeshes[meshIdx];
     auto assimpMesh = _scene->mMeshes[assimpMeshIdx];
     for (unsigned boneIdx = 0; boneIdx < assimpMesh->mNumBones; ++boneIdx)
@@ -386,13 +376,10 @@ void AssimpLoader::Implementation::RecursiveBuildBoneNodeMap(
       // - Mark all its parents the same way until you find the mesh's node 
       // or the parent of the mesh's node
       const aiNode *node = _scene->mRootNode->findBoneNode(bone);
-      std::cout << "bone node: " << ToString(node->mName) << std::endl;
       while (node != nullptr)
       {
-        std::cout << "exploring node and parents of: " << ToString(node->mName) << std::endl;
         if (node == _node || node == _node->mParent)
         {
-          std::cout << "node that fails: " << ToString(node->mName) << std::endl;
           break;
         }
         _nodeMap.insert(ToString(node->mName));
@@ -408,98 +395,6 @@ void AssimpLoader::Implementation::RecursiveBuildBoneNodeMap(
     // Finally recursive call to explore subnode
     this->RecursiveBuildBoneNodeMap(_scene, child_node, _nodeMap);
   }
-}
-
-/////////////////////////////////////////////////
-void AssimpLoader::Implementation::MergeSkeleton(aiNode *&_skeleton,
-    aiNode *_mergeNode) const
-{
-  if (nullptr == _skeleton)
-  {
-    _skeleton = _mergeNode;
-    return;
-  }
-
-  if (nullptr == _mergeNode)
-  {
-    gzerr << "Fail to merge null skeleton node." << std::endl;
-    return;
-  }
-
-  if (_skeleton->FindNode(_mergeNode->mName))
-    return;
-
-  aiNode *currentRoot = _skeleton;
-  if (currentRoot->mName == _mergeNode->mName)
-    return;
-
-  auto *rootInMergeNode = _mergeNode->FindNode(currentRoot->mName);
-
-  if (rootInMergeNode != nullptr)
-  {
-    if (rootInMergeNode != currentRoot)
-    {
-      if (std::string(currentRoot->mName.C_Str()) == "dummy-root")
-      {
-        currentRoot->mNumChildren = 0;
-        delete currentRoot;
-      }
-    }
-    _skeleton = _mergeNode;
-    return;
-  }
-
-  aiNode *dummyRoot = nullptr;
-  if (std::string(currentRoot->mName.C_Str()) == "dummy-root")
-  {
-    // Check if the node that will be merged contains the dummy-root
-    // if so, replace dummyRoot
-    bool mergeNodeContainsRoot = true;
-    for (unsigned int i = 0; i < currentRoot->mNumChildren; ++i)
-    {
-      if (_mergeNode->FindNode(currentRoot->mChildren[i]->mName) == nullptr)
-      {
-        mergeNodeContainsRoot = false;
-        break;
-      }
-    }
-    if (mergeNodeContainsRoot)
-    {
-      _skeleton = _mergeNode;
-      currentRoot->mNumChildren = 0;
-      delete currentRoot;
-      return;
-    }
-    dummyRoot = currentRoot;
-  }
-  else
-  {
-    dummyRoot = new aiNode("dummy-root");
-  }
-
-  auto addChild = [](aiNode *parent, aiNode *child)
-  {
-    if (!parent || !child) return;
-    aiNode** newChildren = new aiNode*[parent->mNumChildren + 1];
-    for (unsigned int i = 0; i < parent->mNumChildren; ++i)
-      newChildren[i] = parent->mChildren[i];
-    newChildren[parent->mNumChildren] = child;
-    if (parent->mChildren)
-      delete[] parent->mChildren;
-    parent->mChildren = newChildren;
-    parent->mNumChildren++;
-    child->mParent = parent;
-  };
-
-  if (dummyRoot != currentRoot)
-  {
-    addChild(dummyRoot, currentRoot);
-  }
-  addChild(dummyRoot, _mergeNode);
-  
-  aiMatrix4x4 identity;
-  dummyRoot->mTransformation = identity;
-  _skeleton = dummyRoot;
 }
 
 //////////////////////////////////////////////////
@@ -1086,29 +981,19 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
       q.pop();
       if (nodeMap.find(ToString(curr->mName)) != nodeMap.end())
       {
-        // std::cout << "this node is a bone or parent of a bone: " << ToString(curr->mName) << std::endl;
         skelRoots.push_back(curr);
       }
       else
       {
-        // std::cout << "this node is NOT a bone or parent of a bone: " << ToString(curr->mName) << std::endl;
         for (unsigned i = 0; i < curr->mNumChildren; ++i)
           q.push(curr->mChildren[i]);
       }
     }
-    aiNode* skelRoot = const_cast<aiNode*>(rootNode);
+
+    const aiNode* skelRoot = rootNode;
     if (skelRoots.size() == 1)
-    {
-      skelRoot = const_cast<aiNode*>(skelRoots[0]);
-    }
-    else if (skelRoots.size() > 1)
-    {
-      skelRoot = const_cast<aiNode*>(skelRoots[0]);
-      for (size_t i = 1; i < skelRoots.size(); ++i)
-      {
-        this->dataPtr->MergeSkeleton(skelRoot, const_cast<aiNode*>(skelRoots[i]));
-      }
-    }
+      skelRoot = skelRoots[0];
+
     auto skelRootName = ToString(skelRoot->mName);
     auto skelRootID = GetColladaNodeID(skelRoot);
     auto rootSkelNode = new SkeletonNode(
@@ -1136,12 +1021,6 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
 
     SkeletonPtr rootSkeleton = std::make_shared<Skeleton>(rootSkelNode);
     mesh->SetSkeleton(rootSkeleton);
-
-    // if (std::string(skelRoot->mName.C_Str()) == "dummy-root")
-    // {
-    //   skelRoot->mNumChildren = 0;
-    //   delete skelRoot;
-    // }
   }
   // Now create the meshes
   // Recursive call to keep track of transforms,
