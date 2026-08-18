@@ -152,22 +152,23 @@ class AssimpLoader::Implementation
   /// \brief Recursively create the skeleton starting from the root node
   /// \param[in] _node the node being processed
   /// \param[in] _parent the parent skeleton node
-  /// \param[in] _nodeMap set of node names, used to skip nodes without a bone
+  /// \param[in] _transform the transform of the current node
+  /// \param[in] _boneNames set of bone names, used to skip nodes without a bone
   public: void RecursiveSkeletonCreate(
           const aiNode* _node,
           SkeletonNode* _parent,
-          const std::unordered_set<std::string> &_nodeMap) const;
+          const math::Matrix4d& _transform,
+          const std::unordered_set<std::string> &_boneNames) const;
 
-  /// \brief Recursively build the node map starting from the root node
-  /// to make sure that only nodes that map to a bone or their parents are 
-  // added to the skeleton
+  /// \brief Recursively store the bone names starting from the root node
+  /// to make sure that only nodes that map to a bone are added to the skeleton
   /// \param[in] _scene the assimp scene
   /// \param[in] _node the node being processed
-  /// \param[out] _nodeMap set of node names populated while recursing
-  public: void RecursiveBuildBoneNodeMap(
+  /// \param[out] _boneNames set of bone names populated while recursing
+  public: void RecursiveStoreBoneNames(
           const aiScene *_scene,
           const aiNode* _node,
-          std::unordered_set<std::string>& _nodeMap) const;
+          std::unordered_set<std::string>& _boneNames) const;
 
   /// \brief Apply the the inv bind transform to the skeleton pose.
   /// \remarks have to set the model transforms starting from the root in
@@ -356,9 +357,9 @@ void AssimpLoader::Implementation::RecursiveCreate(const aiScene* _scene,
   }
 }
 
-void AssimpLoader::Implementation::RecursiveBuildBoneNodeMap(
+void AssimpLoader::Implementation::RecursiveStoreBoneNames(
     const aiScene *_scene, const aiNode *_node,
-    std::unordered_set<std::string>& _nodeMap) const
+    std::unordered_set<std::string>& _boneNames) const
 {
   if (!_node)
     return;
@@ -370,21 +371,7 @@ void AssimpLoader::Implementation::RecursiveBuildBoneNodeMap(
     for (unsigned boneIdx = 0; boneIdx < assimpMesh->mNumBones; ++boneIdx)
     {
       auto bone = assimpMesh->mBones[boneIdx];
-      // For each bone in the mesh
-      // - Find the corresponding node in the scene's hierarchy
-      // - Mark this node as “yes” in the necessityMap 
-      // - Mark all its parents the same way until you find the mesh's node 
-      // or the parent of the mesh's node
-      const aiNode *node = _scene->mRootNode->findBoneNode(bone);
-      while (node != nullptr)
-      {
-        if (node == _node || node == _node->mParent)
-        {
-          break;
-        }
-        _nodeMap.insert(ToString(node->mName));
-        node = node->mParent;
-      }
+      _boneNames.insert(ToString(bone->mName));
     }
   }
 
@@ -393,34 +380,37 @@ void AssimpLoader::Implementation::RecursiveBuildBoneNodeMap(
   {
     auto child_node = _node->mChildren[childIdx];
     // Finally recursive call to explore subnode
-    this->RecursiveBuildBoneNodeMap(_scene, child_node, _nodeMap);
+    this->RecursiveStoreBoneNames(_scene, child_node, _boneNames);
   }
 }
 
 //////////////////////////////////////////////////
-void AssimpLoader::Implementation::RecursiveSkeletonCreate(
-    const aiNode* _node, SkeletonNode* _parent,
-    const std::unordered_set<std::string> &_nodeMap) const
+void AssimpLoader::Implementation::RecursiveSkeletonCreate(const aiNode* _node,
+    SkeletonNode* _parent, const math::Matrix4d& _transform,
+    const std::unordered_set<std::string> &_boneNames) const
 {
   if (_node == nullptr || _parent == nullptr)
     return;
   // First explore this node
   auto nodeName = ToString(_node->mName);
   auto nodeID = GetColladaNodeID(_node);
-  auto necessary = _nodeMap.find(nodeName) != _nodeMap.end();
-
-  if (!necessary)
-    return;
-
+  auto boneExist = _boneNames.find(nodeName) != _boneNames.end();
   auto nodeTrans = this->ConvertTransform(_node->mTransformation);
-  auto skelNode = new SkeletonNode(
-      _parent, nodeName, nodeID, SkeletonNode::JOINT);
-  skelNode->SetTransform(nodeTrans);
+  auto skelNode = _parent;
+
+  if (boneExist)
+  {
+    skelNode = new SkeletonNode(
+        _parent, nodeName, nodeID, SkeletonNode::JOINT);
+    skelNode->SetTransform(nodeTrans);
+  }
+
+  nodeTrans = _transform * nodeTrans;
 
   for (unsigned childIdx = 0; childIdx < _node->mNumChildren; ++childIdx)
   {
     this->RecursiveSkeletonCreate(
-        _node->mChildren[childIdx], skelNode, _nodeMap);
+        _node->mChildren[childIdx], skelNode, nodeTrans, _boneNames);
   }
 }
 
@@ -945,6 +935,8 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
     return mesh;
   }
   auto& rootNode = scene->mRootNode;
+  auto rootName = ToString(rootNode->mName);
+  auto rootID = GetColladaNodeID(rootNode);
   std::string extension;
   std::size_t extIdx = _filename.rfind(".");
   if (extIdx != std::string::npos)
@@ -968,54 +960,18 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
   }
   // Create the skeleton
   {
-    std::unordered_set<std::string> nodeMap;
-    this->dataPtr->RecursiveBuildBoneNodeMap(scene, rootNode, nodeMap);
-
-    // Find the true skeleton root
-    std::vector<const aiNode*> skelRoots;
-    std::queue<const aiNode*> q;
-    q.push(rootNode);
-    while (!q.empty())
-    {
-      auto curr = q.front();
-      q.pop();
-      if (nodeMap.find(ToString(curr->mName)) != nodeMap.end())
-      {
-        skelRoots.push_back(curr);
-      }
-      else
-      {
-        for (unsigned i = 0; i < curr->mNumChildren; ++i)
-          q.push(curr->mChildren[i]);
-      }
-    }
-
-    const aiNode* skelRoot = rootNode;
-    if (skelRoots.size() == 1)
-      skelRoot = skelRoots[0];
-
-    auto skelRootName = ToString(skelRoot->mName);
-    auto skelRootID = GetColladaNodeID(skelRoot);
+    std::unordered_set<std::string> boneNames;
+    this->dataPtr->RecursiveStoreBoneNames(scene, rootNode, boneNames);
     auto rootSkelNode = new SkeletonNode(
-        nullptr, skelRootName, skelRootID, SkeletonNode::NODE);
-    
-    // Preserve transformations
-    math::Matrix4d armatureTransform = math::Matrix4d::Identity;
-    const aiNode *currNode = skelRoot;
-    while (currNode != nullptr && currNode != rootNode)
+        nullptr, rootName, rootID, SkeletonNode::NODE);
+    rootSkelNode->SetTransform(rootTransform);
+    rootSkelNode->SetModelTransform(rootTransform);
+    for (unsigned childIdx = 0; childIdx < rootNode->mNumChildren; ++childIdx)
     {
-      armatureTransform = this->dataPtr->ConvertTransform(
-        currNode->mTransformation) * armatureTransform;
-      currNode = currNode->mParent;
-    }
-    armatureTransform = rootTransform * armatureTransform;
-
-    rootSkelNode->SetTransform(armatureTransform);
-    rootSkelNode->SetModelTransform(armatureTransform);
-    for (unsigned childIdx = 0; childIdx < skelRoot->mNumChildren; ++childIdx)
-    {
+      // First populate the skeleton with the node transforms
       this->dataPtr->RecursiveSkeletonCreate(
-          skelRoot->mChildren[childIdx], rootSkelNode, nodeMap);
+          rootNode->mChildren[childIdx], rootSkelNode,
+          rootTransform, boneNames);
     }
     rootSkelNode->SetParent(nullptr);
 

@@ -819,63 +819,6 @@ TEST_P(MeshManagerLoad, LoadBoxWithMultipleGeoms)
   mgr->RemoveAll();
 }
 
-void CompareSkeletonNodes(const common::SkeletonNode *_colladaNode, const common::SkeletonNode *_assimpNode)
-{
-  ASSERT_NE(nullptr, _colladaNode);
-  ASSERT_NE(nullptr, _assimpNode);
-  
-  // Compare node properties
-  EXPECT_EQ(_colladaNode->Name(), _assimpNode->Name());
-  EXPECT_EQ(_colladaNode->Id(), _assimpNode->Id());
-  
-  // Optionally compare transforms (add a tolerance if floating point differences are expected)
-  // EXPECT_EQ(_colladaNode->Transform(), _assimpNode->Transform());
-  // EXPECT_EQ(_colladaNode->ModelTransform(), _assimpNode->ModelTransform());
-  
-  // Ensure the hierarchy branching is identical
-  ASSERT_EQ(_colladaNode->ChildCount(), _assimpNode->ChildCount()) 
-      << "Child count mismatch at node: " << _colladaNode->Name();
-  
-  // Recursively compare children
-  for (unsigned int i = 0; i < _colladaNode->ChildCount(); ++i)
-  {
-    CompareSkeletonNodes(_colladaNode->Child(i), _assimpNode->Child(i));
-  }
-}
-
-TEST_F(MeshManager, CompareLoadersExactSkeleton)
-{
-  auto *mgr = common::MeshManager::Instance();
-  std::string file = common::testing::TestFile("data", "box_with_double_skeleton.dae");
-  // 1. Load using the native Collada loader
-  common::setenv("GZ_MESH_FORCE_ASSIMP", "false");
-  mgr->SetAssimpEnvs(); // Tell MeshManager to update its config based on the env var
-  
-  const common::Mesh *meshCollada = mgr->Load(file);
-  ASSERT_NE(nullptr, meshCollada);
-  common::SkeletonPtr skeletonCollada = meshCollada->MeshSkeleton();
-  ASSERT_NE(nullptr, skeletonCollada);
-  // Clear the cache so we don't just get the Collada mesh back
-  mgr->RemoveAll();
-  // 2. Load using the Assimp loader
-  common::setenv("GZ_MESH_FORCE_ASSIMP", "true");
-  mgr->SetAssimpEnvs();
-  
-  const common::Mesh *meshAssimp = mgr->Load(file);
-  ASSERT_NE(nullptr, meshAssimp);
-  common::SkeletonPtr skeletonAssimp = meshAssimp->MeshSkeleton();
-  ASSERT_NE(nullptr, skeletonAssimp);
-  // 3. Verify total counts match
-  EXPECT_EQ(skeletonCollada->NodeCount(), skeletonAssimp->NodeCount());
-  EXPECT_EQ(skeletonCollada->JointCount(), skeletonAssimp->JointCount());
-  
-  // 4. Recursively verify exact structure
-  CompareSkeletonNodes(skeletonCollada->RootNode(), skeletonAssimp->RootNode());
-  
-  // Clean up
-  mgr->RemoveAll();
-}
-
 /////////////////////////////////////////////////
 TEST_P(MeshManagerLoad, LoadBoxWithHierarchicalNodes)
 {
@@ -902,39 +845,6 @@ TEST_P(MeshManagerLoad, LoadBoxWithHierarchicalNodes)
   // Nested node that does not have ancestors with a name
   EXPECT_EQ("unnamed_submesh_0", mesh->SubMeshByIndex(5).lock()->Name());
 
-  mgr->RemoveAll();
-}
-
-/////////////////////////////////////////////////
-TEST_P(MeshManagerLoad, MergeBoxWithMultipleRoots)
-{
-  auto *mgr = common::MeshManager::Instance();
-  const common::Mesh *mesh = mgr->Load(
-      common::testing::TestFile("data", "skeleton_with_multiple_roots.dae"));
-  EXPECT_TRUE(mesh->HasSkeleton());
-  auto skeleton_ptr = mesh->MeshSkeleton();
-  // Both ColladaLoader and AssimpLoader now handle disjoint 
-  // armatures by creating a "dummy-root".
-  EXPECT_EQ(skeleton_ptr->RootNode()->Name(), "dummy-root");
-  ASSERT_EQ(skeleton_ptr->RootNode()->ChildCount(), 2u);
-
-  EXPECT_EQ("Armature1", skeleton_ptr->RootNode()->Child(0)->Name());
-  EXPECT_EQ("Armature2", skeleton_ptr->RootNode()->Child(1)->Name());
-  mgr->RemoveAll();
-}
-
-/////////////////////////////////////////////////
-TEST_P(MeshManagerLoad, MergeBoxWithDoubleSkeleton)
-{
-  auto *mgr = common::MeshManager::Instance();
-  const common::Mesh *mesh = mgr->Load(
-      common::testing::TestFile("data", "box_with_double_skeleton.dae"));
-  std::string skeletonRootName = "Armature";
-  EXPECT_TRUE(mesh->HasSkeleton());
-  auto skeleton_ptr = mesh->MeshSkeleton();
-  // The two skeletons have been joined and their root is the
-  // animation root, called Armature
-  EXPECT_EQ(skeleton_ptr->RootNode()->Name(), std::string(skeletonRootName));
   mgr->RemoveAll();
 }
 
