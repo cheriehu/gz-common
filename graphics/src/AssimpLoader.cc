@@ -983,16 +983,6 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
   // mesh is passed by reference and edited throughout
   this->dataPtr->RecursiveCreate(scene, rootNode, rootTransform, mesh);
   auto rootSkeleton = mesh->MeshSkeleton();
-  std::cout << "--- SKELETON HIERARCHY ---" << std::endl;
-  std::function<void(common::SkeletonNode*, int)> printNode = [&](common::SkeletonNode* node, int depth) {
-    if (!node) return;
-    std::cout << std::string(depth * 2, ' ') << "Name: " << node->Name() << ", Id: " << node->Id() << std::endl;
-    for (unsigned int i = 0; i < node->ChildCount(); ++i) {
-      printNode(node->Child(i), depth + 1);
-    }
-  };
-  printNode(rootSkeleton->RootNode(), 0);
-  std::cout << "--------------------------" << std::endl;
   // Add the animations
   for (unsigned animIdx = 0; animIdx < scene->mNumAnimations; ++animIdx)
   {
