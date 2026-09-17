@@ -570,6 +570,13 @@ void AssimpLoader::Implementation::RecursiveSkeletonCreate(const aiNode* _node,
   const auto nodeName = this->GetSkeletonNodeName(_node, extension);
   const auto nodeID = this->GetNodeID(_node, extension);
   auto boneExist = _boneNames.find(nodeName) != _boneNames.end();
+  if (extension == "bvh" &&
+      (nodeName.rfind("EndSite", 0) == 0 ||
+       nodeName.find("EndSite") != std::string::npos ||
+       nodeName.find("End Site") != std::string::npos))
+  {
+    boneExist = false;
+  }
   auto nodeTrans = this->ConvertTransform(_node->mTransformation);
   auto skelNode = _parent;
 
@@ -1121,13 +1128,17 @@ AssimpLoader::~AssimpLoader()
 //////////////////////////////////////////////////
 Mesh *AssimpLoader::Load(const std::string &_filename)
 {
-  this->dataPtr->currentMeshPath = _filename;
+  std::string fullname = common::findFile(_filename);
+  if (fullname.empty())
+    fullname = _filename;
+
+  this->dataPtr->currentMeshPath = fullname;
   Mesh *mesh = new Mesh();
-  std::string path = common::parentPath(_filename);
+  std::string path = common::parentPath(fullname);
   const aiScene* scene = nullptr;
   try
   {
-    scene = this->dataPtr->importer.ReadFile(_filename,
+    scene = this->dataPtr->importer.ReadFile(fullname,
         aiProcess_JoinIdenticalVertices |
         aiProcess_FindDegenerates |
         aiProcess_RemoveRedundantMaterials |
@@ -1153,7 +1164,8 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
   const std::string extension = this->dataPtr->GetFileExtension();
 
   // compute assimp root node transform
-  bool useIdentityRotation = (extension != "glb" && extension != "gltf");
+  bool useIdentityRotation = (extension != "glb" && extension != "gltf") ||
+      ToString(rootNode->mName) == "Z_UP";
   auto transform = this->dataPtr->UpdatedRootNodeTransform(scene,
     useIdentityRotation);
   auto rootTransform = this->dataPtr->ConvertTransform(transform);
@@ -1181,7 +1193,33 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
   }
   // Create the skeleton
   std::unordered_set<std::string> boneNames;
-  this->dataPtr->RecursiveStoreBoneNames(scene, rootNode, boneNames);
+  if (extension == "bvh")
+  {
+    for (unsigned animIdx = 0; animIdx < scene->mNumAnimations; ++animIdx)
+    {
+      auto& anim = scene->mAnimations[animIdx];
+      for (unsigned chanIdx = 0; chanIdx < anim->mNumChannels; ++chanIdx)
+      {
+        auto animChan = anim->mChannels[chanIdx];
+        std::string nodeName = ToString(animChan->mNodeName);
+        if (auto animNode = scene->mRootNode->FindNode(animChan->mNodeName))
+        {
+          nodeName = this->dataPtr->GetSkeletonNodeName(animNode, extension);
+        }
+        if (nodeName.rfind("EndSite", 0) == 0 ||
+            nodeName.find("EndSite") != std::string::npos ||
+            nodeName.find("End Site") != std::string::npos)
+        {
+          continue;
+        }
+        boneNames.insert(nodeName);
+      }
+    }
+  }
+  else
+  {
+    this->dataPtr->RecursiveStoreBoneNames(scene, rootNode, boneNames);
+  }
   if (!boneNames.empty())
   {
     const aiNode* lcaNode = this->dataPtr->FindLowestCommonAncestor(rootNode,
@@ -1193,14 +1231,22 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
     const std::string rootID = this->dataPtr->GetNodeID(skelRoot, extension);
     auto rootSkelNode = new SkeletonNode(
         nullptr, rootName, rootID, SkeletonNode::NODE);
-    rootSkelNode->SetTransform(rootTransform);
-    rootSkelNode->SetModelTransform(rootTransform);
+    // Accumulate ancestor transforms from rootNode to skelRoot
+    auto skelTransform = math::Matrix4d::Identity;
+    for (const aiNode *node = skelRoot; node != nullptr; node = node->mParent)
+    {
+      auto nodeTransform = (node == rootNode) ? rootTransform :
+          this->dataPtr->ConvertTransform(node->mTransformation);
+      skelTransform = nodeTransform * skelTransform;
+    }
+    rootSkelNode->SetTransform(skelTransform);
+    rootSkelNode->SetModelTransform(skelTransform);
     for (unsigned childIdx = 0; childIdx < skelRoot->mNumChildren; ++childIdx)
     {
       // First populate the skeleton with the node transforms
       this->dataPtr->RecursiveSkeletonCreate(
           skelRoot->mChildren[childIdx], rootSkelNode,
-          rootTransform, boneNames);
+          skelTransform, boneNames);
     }
     rootSkelNode->SetParent(nullptr);
 
@@ -1225,33 +1271,63 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
                    std::to_string(rootSkeleton->AnimationCount() + 1);
       }
       SkeletonAnimation* skelAnim = new SkeletonAnimation(animName);
+      double ticksPerSecond = 1000.0;
+      // BVH defines the ticksPerSecond in the file
+      if (extension == "bvh")
+      {
+        ticksPerSecond = anim->mTicksPerSecond > 0.0 
+                         ? anim->mTicksPerSecond 
+                         : 1.0;
+      }
       for (unsigned chanIdx = 0; chanIdx < anim->mNumChannels; ++chanIdx)
       {
         auto& animChan = anim->mChannels[chanIdx];
         auto chanName = ToString(animChan->mNodeName);
-        if (auto animNode = scene->mRootNode->FindNode(animChan->mNodeName))
+        const aiNode* animNode = scene->mRootNode->FindNode(animChan->mNodeName);
+        if (animNode)
         {
           chanName = this->dataPtr->GetSkeletonNodeName(animNode, extension);
         }
+        if (extension == "bvh" &&
+            (chanName.rfind("EndSite", 0) == 0 ||
+             chanName.find("EndSite") != std::string::npos ||
+             chanName.find("End Site") != std::string::npos))
+        {
+          continue;
+        }
         auto numKeys = std::max(
             animChan->mNumPositionKeys, animChan->mNumRotationKeys);
+        math::Vector3d defaultPos = math::Vector3d::Zero;
+        if (animNode)
+        {
+          defaultPos = this->dataPtr->ConvertTransform(animNode->mTransformation).Translation();
+        }
         // Position and rotation arrays might be different lengths,
         // iterate over the maximum of the two, safely access by checking
         // number of keys
         for (unsigned keyIdx = 0; keyIdx < numKeys; ++keyIdx)
         {
-          // Note, Scaling keys are not supported right now
-          // Compute the position into a math pose
-          auto& posKey = animChan->mPositionKeys[
-            std::min(keyIdx, animChan->mNumPositionKeys - 1)];
-          auto& quatKey = animChan->mRotationKeys[
-            std::min(keyIdx, animChan->mNumRotationKeys - 1)];
-          math::Vector3d pos(posKey.mValue.x, posKey.mValue.y, posKey.mValue.z);
-          math::Quaterniond quat(quatKey.mValue.w, quatKey.mValue.x,
-              quatKey.mValue.y, quatKey.mValue.z);
+          math::Vector3d pos = defaultPos;
+          double keyTime = 0.0;
+          if (animChan->mNumPositionKeys > 0)
+          {
+            auto& posKey = animChan->mPositionKeys[
+              std::min(keyIdx, animChan->mNumPositionKeys - 1)];
+            pos.Set(posKey.mValue.x, posKey.mValue.y, posKey.mValue.z);
+            keyTime = posKey.mTime;
+          }
+          math::Quaterniond quat = math::Quaterniond::Identity;
+          if (animChan->mNumRotationKeys > 0)
+          {
+            auto& quatKey = animChan->mRotationKeys[
+              std::min(keyIdx, animChan->mNumRotationKeys - 1)];
+            quat.Set(quatKey.mValue.w, quatKey.mValue.x,
+                quatKey.mValue.y, quatKey.mValue.z);
+            if (animChan->mNumRotationKeys > animChan->mNumPositionKeys)
+              keyTime = quatKey.mTime;
+          }
           math::Pose3d pose(pos, quat);
-          // Time is in ms
-          skelAnim->AddKeyFrame(chanName, posKey.mTime / 1000.0, pose);
+          skelAnim->AddKeyFrame(chanName, keyTime / ticksPerSecond, pose);
         }
       }
       rootSkeleton->AddAnimation(skelAnim);
