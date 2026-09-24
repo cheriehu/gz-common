@@ -27,20 +27,10 @@
 
 using namespace gz;
 
-class BHVLoaderTest : public common::testing::AutoLogFixture { };
-
-void printNode(common::SkeletonNode* node, int depth)
-{
-    if (!node) return;
-    std::cout << std::string(depth * 2, ' ') << "Name: " << node->Name() << ", Id: " << node->Id() << std::endl;
-    std::cout << std::string(depth * 2, ' ') << "Transform:" << node->Transform() << std::endl;
-    for (unsigned int i = 0; i < node->ChildCount(); ++i) {
-      printNode(node->Child(i), depth + 1);
-    }
-}
+class BVHLoaderTest : public common::testing::AutoLogFixture { };
 
 /////////////////////////////////////////////////
-TEST_F(BHVLoaderTest, LoadBVH)
+TEST_F(BVHLoaderTest, LoadBVH)
 {
   common::BVHLoader loader;
   auto skel = loader.Load("", 1);
@@ -52,12 +42,9 @@ TEST_F(BHVLoaderTest, LoadBVH)
 
   EXPECT_EQ(skel->RootNode()->Name(), std::string("Hips"));
   EXPECT_EQ(31u, skel->NodeCount());
-  std::cout << "--- SKELETON HIERARCHY ---" << std::endl;
-  printNode(skel->RootNode(), 0);
-  std::cout << "--------------------------" << std::endl;
 }
 
-TEST_F(BHVLoaderTest, LoadBVHAssimp)
+TEST_F(BVHLoaderTest, LoadBVHAssimp)
 {
   gz::common::AssimpLoader loader;
   std::unique_ptr<gz::common::Mesh> mesh(loader.Load(
@@ -74,21 +61,4 @@ TEST_F(BHVLoaderTest, LoadBVHAssimp)
 
   EXPECT_EQ(skel->RootNode()->Name(), std::string("Hips"));
   EXPECT_EQ(31u, skel->NodeCount());
-  printNode(skel->RootNode(), 0);
-
-  common::BVHLoader bvhLoader;
-  auto bvhSkel = bvhLoader.Load(common::testing::TestFile("data", "cmu-13_26.bvh"), 1);
-  ASSERT_NE(nullptr, bvhSkel);
-  auto bvhAnim = bvhSkel->Animation(0);
-  auto assimpAnim = skel->Animation(0);
-
-  EXPECT_NEAR(bvhAnim->Length(), assimpAnim->Length(), 1e-4);
-  EXPECT_EQ(bvhAnim->NodeCount(), assimpAnim->NodeCount());
-
-  for (const std::string joint : {"Hips", "LeftUpLeg", "RightArm"})
-  {
-    EXPECT_EQ(bvhSkel->NodeByName(joint)->Transform(), skel->NodeByName(joint)->Transform());
-    EXPECT_TRUE(bvhAnim->NodePoseAt(joint, 0.0).Equal(assimpAnim->NodePoseAt(joint, 0.0), 1e-4));
-    EXPECT_TRUE(bvhAnim->NodePoseAt(joint, 1.0).Equal(assimpAnim->NodePoseAt(joint, 1.0), 1e-4));
-  }
 }

@@ -1157,6 +1157,7 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
   const std::string extension = this->dataPtr->GetFileExtension();
 
   // compute assimp root node transform
+  // GLTFs generated from COLLADA2GLTF tool have a Z_UP transformation node
   bool useIdentityRotation = (extension != "glb" && extension != "gltf") ||
       ToString(rootNode->mName) == "Z_UP";
   auto transform = this->dataPtr->UpdatedRootNodeTransform(scene,
@@ -1186,6 +1187,7 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
   }
   // Create the skeleton
   std::unordered_set<std::string> boneNames;
+  // Assimp's BVH loader puts the animation data into mAnimation
   if (extension == "bvh")
   {
     for (unsigned animIdx = 0; animIdx < scene->mNumAnimations; ++animIdx)
@@ -1195,10 +1197,6 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
       {
         auto animChan = anim->mChannels[chanIdx];
         std::string nodeName = ToString(animChan->mNodeName);
-        if (auto animNode = scene->mRootNode->FindNode(animChan->mNodeName))
-        {
-          nodeName = this->dataPtr->GetSkeletonNodeName(animNode, extension);
-        }
         boneNames.insert(nodeName);
       }
     }
@@ -1262,15 +1260,16 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
       // BVH defines the ticksPerSecond in the file
       if (extension == "bvh")
       {
-        ticksPerSecond = anim->mTicksPerSecond > 0.0 
-                         ? anim->mTicksPerSecond 
+        ticksPerSecond = anim->mTicksPerSecond > 0.0
+                         ? anim->mTicksPerSecond
                          : 1.0;
       }
       for (unsigned chanIdx = 0; chanIdx < anim->mNumChannels; ++chanIdx)
       {
         auto& animChan = anim->mChannels[chanIdx];
         auto chanName = ToString(animChan->mNodeName);
-        const aiNode* animNode = scene->mRootNode->FindNode(animChan->mNodeName);
+        const aiNode* animNode = scene->mRootNode->FindNode(
+          animChan->mNodeName);
         if (animNode)
         {
           chanName = this->dataPtr->GetSkeletonNodeName(animNode, extension);
@@ -1280,7 +1279,8 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
         math::Vector3d defaultPos = math::Vector3d::Zero;
         if (animNode)
         {
-          defaultPos = this->dataPtr->ConvertTransform(animNode->mTransformation).Translation();
+          defaultPos = this->dataPtr->ConvertTransform(
+            animNode->mTransformation).Translation();
         }
         // Position and rotation arrays might be different lengths,
         // iterate over the maximum of the two, safely access by checking
@@ -1303,6 +1303,8 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
               std::min(keyIdx, animChan->mNumRotationKeys - 1)];
             quat.Set(quatKey.mValue.w, quatKey.mValue.x,
                 quatKey.mValue.y, quatKey.mValue.z);
+            // BVH loader in assimp sometimes sets mNumPositionKeys to 1
+            // but the rotation key is always present
             if (animChan->mNumRotationKeys > animChan->mNumPositionKeys)
               keyTime = quatKey.mTime;
           }
