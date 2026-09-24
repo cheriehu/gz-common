@@ -570,13 +570,6 @@ void AssimpLoader::Implementation::RecursiveSkeletonCreate(const aiNode* _node,
   const auto nodeName = this->GetSkeletonNodeName(_node, extension);
   const auto nodeID = this->GetNodeID(_node, extension);
   auto boneExist = _boneNames.find(nodeName) != _boneNames.end();
-  if (extension == "bvh" &&
-      (nodeName.rfind("EndSite", 0) == 0 ||
-       nodeName.find("EndSite") != std::string::npos ||
-       nodeName.find("End Site") != std::string::npos))
-  {
-    boneExist = false;
-  }
   auto nodeTrans = this->ConvertTransform(_node->mTransformation);
   auto skelNode = _parent;
 
@@ -1206,12 +1199,6 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
         {
           nodeName = this->dataPtr->GetSkeletonNodeName(animNode, extension);
         }
-        if (nodeName.rfind("EndSite", 0) == 0 ||
-            nodeName.find("EndSite") != std::string::npos ||
-            nodeName.find("End Site") != std::string::npos)
-        {
-          continue;
-        }
         boneNames.insert(nodeName);
       }
     }
@@ -1287,13 +1274,6 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
         if (animNode)
         {
           chanName = this->dataPtr->GetSkeletonNodeName(animNode, extension);
-        }
-        if (extension == "bvh" &&
-            (chanName.rfind("EndSite", 0) == 0 ||
-             chanName.find("EndSite") != std::string::npos ||
-             chanName.find("End Site") != std::string::npos))
-        {
-          continue;
         }
         auto numKeys = std::max(
             animChan->mNumPositionKeys, animChan->mNumRotationKeys);
