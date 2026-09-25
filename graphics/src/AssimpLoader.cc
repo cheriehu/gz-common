@@ -1121,17 +1121,13 @@ AssimpLoader::~AssimpLoader()
 //////////////////////////////////////////////////
 Mesh *AssimpLoader::Load(const std::string &_filename)
 {
-  std::string fullname = common::findFile(_filename);
-  if (fullname.empty())
-    fullname = _filename;
-
-  this->dataPtr->currentMeshPath = fullname;
+  this->dataPtr->currentMeshPath = _filename;
   Mesh *mesh = new Mesh();
-  std::string path = common::parentPath(fullname);
+  std::string path = common::parentPath(_filename);
   const aiScene* scene = nullptr;
   try
   {
-    scene = this->dataPtr->importer.ReadFile(fullname,
+    scene = this->dataPtr->importer.ReadFile(_filename,
         aiProcess_JoinIdenticalVertices |
         aiProcess_FindDegenerates |
         aiProcess_RemoveRedundantMaterials |
