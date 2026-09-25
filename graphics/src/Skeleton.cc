@@ -345,7 +345,7 @@ void Skeleton::AddAnimation(SkeletonAnimation *_anim)
 static SkeletonPtr GetSkeletonFromBvh(const std::string &_bvhFile,
       double _scale)
 {
-  std::string fullname = common::findFile(_bvhFile);
+  const std::string fullname = common::findFile(_bvhFile);
   if (fullname.empty())
   {
     gzerr << "Unable to find file [" << _bvhFile << "]" << std::endl;
@@ -379,11 +379,10 @@ static SkeletonPtr GetSkeletonFromBvh(const std::string &_bvhFile,
     skel->Scale(_scale);
     return skel;
   }
-  else
-  {
-    BVHLoader loader;
-    return loader.Load(fullname, _scale);
-  }
+
+  // If not using assimp, use custom BVHLoader
+  BVHLoader loader;
+  return loader.Load(fullname, _scale);
 }
 
 //////////////////////////////////////////////////

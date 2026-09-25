@@ -1191,9 +1191,8 @@ Mesh *AssimpLoader::Load(const std::string &_filename)
       auto& anim = scene->mAnimations[animIdx];
       for (unsigned chanIdx = 0; chanIdx < anim->mNumChannels; ++chanIdx)
       {
-        auto animChan = anim->mChannels[chanIdx];
-        std::string nodeName = ToString(animChan->mNodeName);
-        boneNames.insert(nodeName);
+        const auto animChan = anim->mChannels[chanIdx];
+        boneNames.insert(ToString(animChan->mNodeName));
       }
     }
   }
